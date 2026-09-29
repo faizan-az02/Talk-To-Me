@@ -1,6 +1,9 @@
 import sounddevice as sd
 import numpy as np
+import torch
+
 from faster_whisper import WhisperModel
+from silero_vad import load_silero_vad
 
 # -------------------------
 # Settings
@@ -23,42 +26,83 @@ model = WhisperModel(
 
 print("Whisper loaded.")
 
+print("Loading Silero VAD...")
+
+vad_model = load_silero_vad()
+
+print("Silero VAD loaded.")
+
 text = ""
+audio_chunks = []
 
-# -------------------------
-# Record microphone
-# -------------------------
-while text.strip().lower() != "exit.":
+CHUNK_SIZE = 512
+SPEECH_THRESHOLD = 0.5
+SILENCE_DURATION = 1
+silence_samples = 0
 
-    print(f"\nSpeak now... recording for {RECORD_SECONDS} seconds.")
+speaking = False
 
-    audio = sd.rec(
-        int(RECORD_SECONDS * SAMPLE_RATE),
-        samplerate=SAMPLE_RATE,
-        channels=1,
-        dtype="float32"
-    )
+print("Conversation Started...")
 
-    sd.wait()
+with sd.InputStream(
+    samplerate=SAMPLE_RATE,
+    channels=1,
+    dtype="float32",
+    blocksize=CHUNK_SIZE
+) as stream:
 
-    audio = np.squeeze(audio)
+    while text.strip().lower() not in ["exit.", "quit.", "bye."]:
 
-    print("Recording finished.")
-    print("Transcribing...\n")
+        audio_chunks = []
+        speaking = False
 
-    # -------------------------
-    # Transcribe
-    # -------------------------
+        while True:
 
-    segments, info = model.transcribe(
-        audio,
-        language="en"
-    )
+            audio, overflowed = stream.read(CHUNK_SIZE)
 
-    text = ""
+            audio = np.squeeze(audio)
 
-    for segment in segments:
-        text += segment.text
+            audio_chunks.append(audio)
 
-    print("You said:")
-    print(text.strip())
+            audio_tensor = torch.from_numpy(audio)
+
+            speech_probability = vad_model(
+                audio_tensor,
+                SAMPLE_RATE
+            ).item()
+
+            if speech_probability >= SPEECH_THRESHOLD:
+
+                # We have speech again, so reset silence counter
+                silence_samples = 0
+
+                if not speaking:
+                    print("Speech started!")
+                    speaking = True
+
+            elif speaking:
+
+                # We are currently in a speech session,
+                # but this chunk is silence
+                silence_samples += CHUNK_SIZE
+
+                silence_seconds = silence_samples / SAMPLE_RATE
+
+                if silence_seconds >= SILENCE_DURATION:
+                    print("Speech ended!")
+                    break
+
+        complete_audio = np.concatenate(audio_chunks)
+
+        segments, info = model.transcribe(
+            complete_audio,
+            language="en"
+        )
+
+        text = ""
+
+        for segment in segments:
+            text += segment.text
+
+        print("You:")
+        print(text.strip())
