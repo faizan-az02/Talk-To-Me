@@ -7,6 +7,9 @@ import subprocess
 from faster_whisper import WhisperModel
 from silero_vad import load_silero_vad
 
+from piper import PiperVoice
+from piper.config import SynthesisConfig
+
 # -------------------------
 # Settings
 # -------------------------
@@ -28,11 +31,54 @@ model = WhisperModel(
 
 print("Whisper loaded.")
 
+# -------------------------
+# Load Piper
+# -------------------------
+
+print("Loading Piper...")
+
+voice = PiperVoice.load("voices/en_US-hfc_female-medium.onnx")
+
+print("Piper loaded.")
+
+syn_config = SynthesisConfig(
+    length_scale=0.75
+)
+
+# -------------------------
+# Load Silero VAD
+# -------------------------
+
 print("Loading Silero VAD...")
 
 vad_model = load_silero_vad()
 
 print("Silero VAD loaded.")
+
+# -------------------------
+# Load Ollama
+# -------------------------
+
+print("Loading Ollama...")
+
+session = requests.Session()
+
+response = session.post("http://localhost:11434/api/chat",
+                    json={
+                        "model": "qwen3:8b",
+                        "messages": [
+                        {
+                         "role": "system",
+                        "content": "Reply with a \"Hi\""
+                        }
+                    ],
+        "stream": False,
+        "think": False,
+        "keep_alive": -1,
+    }       
+)
+
+print("Ollama loaded.")
 
 text = ""
 audio_chunks = []
@@ -47,8 +93,6 @@ speaking = False
 subprocess.run("cls", shell=True)
 
 print("Conversation Started...")
-
-session = requests.Session()
 
 with sd.InputStream(
     samplerate=SAMPLE_RATE,
@@ -130,4 +174,15 @@ with sd.InputStream(
             }       
         )
 
-        print(f"System: {response.json()['message']['content']}")
+        response_text = response.json()["message"]["content"]
+
+        print("System:", response_text)
+
+        for chunk in voice.synthesize(response_text, syn_config=syn_config):
+
+            sd.play(
+                chunk.audio_float_array,
+                samplerate=chunk.sample_rate
+            )
+
+            sd.wait()
