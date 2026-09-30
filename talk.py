@@ -1,7 +1,9 @@
 import sounddevice as sd
 import numpy as np
 import torch
+import requests
 
+import subprocess
 from faster_whisper import WhisperModel
 from silero_vad import load_silero_vad
 
@@ -42,7 +44,11 @@ silence_samples = 0
 
 speaking = False
 
+subprocess.run("cls", shell=True)
+
 print("Conversation Started...")
+
+session = requests.Session()
 
 with sd.InputStream(
     samplerate=SAMPLE_RATE,
@@ -75,7 +81,6 @@ with sd.InputStream(
                 silence_samples = 0
 
                 if not speaking:
-                    print("Speech started!")
                     speaking = True
 
             elif speaking:
@@ -87,7 +92,6 @@ with sd.InputStream(
                 silence_seconds = silence_samples / SAMPLE_RATE
 
                 if silence_seconds >= SILENCE_DURATION:
-                    print("Speech ended!")
                     break
 
             if speaking:
@@ -107,4 +111,23 @@ with sd.InputStream(
 
         print("You:", text.strip())
 
-    print("System: Have a good day!")
+        response = session.post("http://localhost:11434/api/chat",
+                                json={
+                                    "model": "qwen3:8b",
+                                    "messages": [
+                                        {
+                                            "role": "system",
+                                            "content": "You are a helpful assistant. Answer in at MAX 3 lines."
+                                        },
+                                        {
+                                            "role": "user",
+                                            "content": text.strip()
+                                        }
+                                    ],
+                                "stream": False,
+                                "think": False,
+                                "keep_alive": -1,
+            }       
+        )
+
+        print(f"System: {response.json()['message']['content']}")
