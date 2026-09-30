@@ -105,5 +105,6 @@ with sd.InputStream(
         for segment in segments:
             text += segment.text
 
-        print("You:")
-        print(text.strip())
+        print("You:", text.strip())
+
+    print("System: Have a good day!")
