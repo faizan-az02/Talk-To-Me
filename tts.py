@@ -62,8 +62,6 @@ with sd.InputStream(
 
             audio = np.squeeze(audio)
 
-            audio_chunks.append(audio)
-
             audio_tensor = torch.from_numpy(audio)
 
             speech_probability = vad_model(
@@ -91,6 +89,9 @@ with sd.InputStream(
                 if silence_seconds >= SILENCE_DURATION:
                     print("Speech ended!")
                     break
+
+            if speaking:
+                audio_chunks.append(audio.copy())                        
 
         complete_audio = np.concatenate(audio_chunks)
 
